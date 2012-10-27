@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 unsigned char *data;
 const int BSIZE = 512;
@@ -21,6 +22,14 @@ int get4( int pos ) {
   return d; // negative numbers?!
 }
 
+int checksum( int block ) {
+  int o = block*BSIZE;
+  u_int32_t ns = 0;
+  for( int i=0; i<BSIZE; i+=4 ) 
+    ns += i==20?0:get4(o+i);
+  ns = -ns;
+  return ns;
+}
 
 int main( int argc, char *argv[] ) {
   // check size
@@ -28,6 +37,10 @@ int main( int argc, char *argv[] ) {
   stat( argv[1], &filestatus );
   int size = filestatus.st_size;
   data = (unsigned char*)calloc(size,1);
+
+  // block chain tables
+  int *bs = (int*)calloc(size/BSIZE,sizeof(int)); // sequence number
+  char *ck = (char*)calloc(size/BSIZE,1); // verified checksum
 
   // read entire file
   FILE *in = fopen(argv[1],"rb");
@@ -39,18 +52,47 @@ int main( int argc, char *argv[] ) {
     printf("could not read entire file!\n");
     return 1;
   }
+  fclose(in);
 
+  // 1st PASS
   // scan blocks
   int sectype, self;
   for( int i=0; i<size; i+=BSIZE ) {
     sectype = get4(i+BSIZE-4);
     self = get4(i+4)*BSIZE;
-    if( get4(i) == 2 && sectype == -3 && i==self ) {
-      printf( "'%s'\n", getString(i+BSIZE-79,30) );
+
+    // verify checksum
+    if( get4(i+20) == checksum(i/BSIZE) ) {
+      ck[i/BSIZE] = 1;
+
+      // file header block
+      if( get4(i) == 2 && sectype == -3 && i==self ) {
+        printf( "'%s'\n", getString(i+BSIZE-79,30) );
+      }
+
+      // data block
+      if( get4(i) == 8 ) {
+        // store sequence number
+        bs[i/BSIZE] = get4(i+8);
+      }
+    } else {
+      if( i/BSIZE > 1 ) 
+        printf( "checksum fail at block %d\n", i/BSIZE );
     }
   }
 
-  fclose(in);
-
+  // 2nd PASS
+  // write chains
+  for( int i=0; i<size/BSIZE; ++i ) {
+    if( bs[i] == 1 ) {
+      int j = i;
+      do {
+        // write get4(j*BSIZE+12) bytes
+        
+        // next block
+        j = get4(j*BSIZE+16);
+      } while( j != 0 );
+    }
+  }
 
 }
