@@ -54,6 +54,22 @@ int main( int argc, char *argv[] ) {
   }
   fclose(in);
 
+  // check filesystem type
+  int fstype = get4(0);
+  if( fstype != 0x444f5300 ) {
+    switch(fstype) {
+      case 0x444f5301 : printf("Fast file system"); break;
+      case 0x444f5302 : printf("Inter DOS"); break;
+      case 0x444f5303 : printf("Inter FFS"); break;
+      case 0x444f5304 : printf("Fastdir OFS"); break;
+      case 0x444f5305 : printf("Fastdir FFS"); break;
+      case 0x4b49434b : printf("Kickstart disk"); break;
+    }
+    printf( " not supported yet. Exiting.\n" );
+    return 1;
+  }
+  printf( "OFS disk filesystem detected. Continuing.\n");
+
   // 1st PASS
   // scan blocks
   int sectype, self;
