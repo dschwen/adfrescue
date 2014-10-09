@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -44,7 +45,9 @@ int main( int argc, char *argv[] ) {
 
   // block chain tables
   int *bs = (int*)calloc(size/BSIZE,sizeof(int)); // sequence number
+  int *next = (int*)calloc(size/BSIZE,sizeof(int)); // next datablock
   char *ck = (char*)calloc(size/BSIZE,1); // verified checksum
+  char *used = (char*)calloc(size/BSIZE,1); // is this block used by any file?
 
   // read entire file
   FILE *in = fopen(argv[1],"rb");
@@ -78,6 +81,10 @@ int main( int argc, char *argv[] ) {
   // scan blocks
   int sectype, self;
   for( int i=0; i<size; i+=BSIZE ) {
+    used[i/BSIZE] = 0;
+    next[i/BSIZE] = -1;
+    bs[i/BSIZE] = 0;
+
     sectype = get4(i+BSIZE-4);
     self = get4(i+4)*BSIZE;
 
@@ -91,8 +98,10 @@ int main( int argc, char *argv[] ) {
 
       // data block
       if( get4(i) == 8 ) {
-        // store sequence number
+        // store sequence number (1...nblocks)
         bs[i/BSIZE] = get4(i+8);
+        // next data block in chain
+        next[i/BSIZE] = get4(i+16);
       }
     } else {
       if( i/BSIZE > 1 ) 
@@ -100,25 +109,51 @@ int main( int argc, char *argv[] ) {
     }
   }
 
-  // 2nd PASS check files
+  // 2nd PASS check and dump files for which we found header blocks
   for (int j=0; j<nfile; ++j)
   {
     int i = fileheaders[j];
 
     int nblocks = get4(i+8);
-    printf( "%d: '%s' (%d blocks, first=%d)\n", i/BSIZE, getString(i+BSIZE-79,30), nblocks, get4(i+16) );
+    int filesize = get4(i+BSIZE-188);
+    printf( "%d: '%s' (%d bytes)\n", i/BSIZE, getString(i+BSIZE-79,30), filesize);
+
+    unsigned char *filedata = (unsigned char*)malloc(filesize);
+    int fileptr = 0;
 
     int broken = 0;
     for (int k=0; k<nblocks; ++k)
     {
+      // 
       int dblock = get4(i+BSIZE-204-k*4);
       if (ck[dblock] == 0) broken++;
+
+      // copy localsize bytes
+      int localsize = get4(dblock*BSIZE+12);
+      if (fileptr+localsize >= filesize) 
+      {
+        printf("More data than expected!");
+        return 1;
+      }
+      memcpy(&filedata[fileptr], &data[dblock*BSIZE+24], localsize);
+      fileptr += localsize;
+
+      // flag this block as used
+      used[dblock] = 1;
     }
     if (broken==0)
       printf("ALL OK!\n");
     else
       printf("contains %d broken blocks out of %d :-(\n", broken, nblocks);
+
+    char fname[1000] = "dummy.dat";
+    FILE *out = fopen(fname, "rb");
+    fclose(out);
+
+    free(filedata);
   }
+
+  // 3rd PASS check and dump files for which we found NO header blocks
 
 /*
 
