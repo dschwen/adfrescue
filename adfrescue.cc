@@ -36,6 +36,21 @@ int checksum( int block ) {
   return ns;
 }
 
+int *bs, *next;
+char *ck, *used;
+
+void followBlockChain(int block, FILE * out)
+{
+  // write this block
+  int localsize = get4(block*BSIZE+12);
+  fwrite(&data[block*BSIZE+24], sizeof(char), localsize, out);
+  used[block] = 1;
+
+  // jump to next block
+  if(bs[next[block]] == bs[block]+1 && used[next[block]] == 0 && ck[next[block]] != 0)
+    followBlockChain(next[block], out);
+}
+
 int main( int argc, char *argv[] ) {
   // check size
   struct stat filestatus;
@@ -44,10 +59,10 @@ int main( int argc, char *argv[] ) {
   data = (unsigned char*)calloc(size,1);
 
   // block chain tables
-  int *bs = (int*)calloc(size/BSIZE,sizeof(int)); // sequence number
-  int *next = (int*)calloc(size/BSIZE,sizeof(int)); // next datablock
-  char *ck = (char*)calloc(size/BSIZE,1); // verified checksum
-  char *used = (char*)calloc(size/BSIZE,1); // is this block used by any file?
+  bs = (int*)calloc(size/BSIZE,sizeof(int)); // sequence number
+  next = (int*)calloc(size/BSIZE,sizeof(int)); // next datablock
+  ck = (char*)calloc(size/BSIZE,1); // verified checksum
+  used = (char*)calloc(size/BSIZE,1); // is this block used by any file?
 
   // read entire file
   FILE *in = fopen(argv[1],"rb");
@@ -77,8 +92,8 @@ int main( int argc, char *argv[] ) {
   }
   printf( "OFS disk filesystem detected. Continuing.\n");
 
-  // 1st PASS
-  // scan blocks
+  // 1st PASS scan all blocks
+  printf("\nPASS1: Scan all blocks on disk.\n");
   int sectype, self;
   for( int i=0; i<size; i+=BSIZE ) {
     used[i/BSIZE] = 0;
@@ -110,6 +125,7 @@ int main( int argc, char *argv[] ) {
   }
 
   // 2nd PASS check and dump files for which we found header blocks
+  printf("\nPASS2: Dump files using the header blocks.\n");
   for (int j=0; j<nfile; ++j)
   {
     int i = fileheaders[j];
@@ -127,7 +143,8 @@ int main( int argc, char *argv[] ) {
     {
       int nblocks = get4(i+8);
       int nextext = get4(i+BSIZE-8);
-printf("  %d %d\n", nblocks, nextext);
+      //printf("  %d %d\n", nblocks, nextext);
+
       // loop over data block table
       for (int k=0; k<nblocks; ++k)
       {
@@ -184,27 +201,25 @@ printf("  %d %d\n", nblocks, nextext);
       printf("Could not open '%s' for writing.\n", fname);
       return 1;
     }
-    fwrite (filedata , sizeof(char), filesize, out);
+    fwrite (filedata, sizeof(char), filesize, out);
     fclose(out);
 
     free(filedata);
   }
 
   // 3rd PASS check and dump files for which we found NO header blocks
-
-/*
-
-  // write chains
-  for( int i=0; i<size/BSIZE; ++i ) {
-    if( bs[i] == 1 ) {
-      int j = i;
-      do {
-        // write get4(j*BSIZE+12) bytes
-
-        // next block
-        j = get4(j*BSIZE+16);
-      } while( j != 0 );
+  printf("\nPASS3: Collect unclaimed block chains.\n");
+  for( int i=0; i<size/BSIZE; ++i )
+  {
+    if(bs[i] == 1 && used[i] == 0 && ck[i] != 0)
+    {
+      char fname[1000];
+      snprintf(fname, 1000, "chain.%d", i);
+      FILE *out = fopen(fname, "wb");
+      followBlockChain(i, out);
+      fclose(out);
     }
   }
-*/
+
+  printf("\ndone.\n");
 }
