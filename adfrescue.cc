@@ -162,7 +162,7 @@ int main( int argc, char *argv[] ) {
           int localsize = get4(dblock*BSIZE+12);
           if (fileptr+localsize > filesize)
           {
-            printf("More data than expected (%d/%d)!\n", fileptr+localsize, filesize);
+            printf("\tMore data than expected (%d/%d)!\n", fileptr+localsize, filesize);
             break;
           }
           memcpy(&filedata[fileptr], &data[dblock*BSIZE+24], localsize);
@@ -178,7 +178,7 @@ int main( int argc, char *argv[] ) {
       {
         if (ck[nextext] == 0)
         {
-          printf("Broken extension block (need to implement switch to block chain following)\n");
+          printf("\tBroken extension block (need to implement switch to block chain following)\n");
           break;
         }
         i = nextext * BSIZE;
@@ -188,12 +188,12 @@ int main( int argc, char *argv[] ) {
     } while(true);
 
     if (broken==0)
-      printf("ALL OK!\n");
+      printf("\tALL OK!\n");
     else
-      printf("contains %d broken blocks :-(\n", broken);
+      printf("\tcontains %d broken blocks :-(\n", broken);
 
     if (fileptr < filesize)
-      printf("Not enough data found (%d/%d)!\n", fileptr, filesize);
+      printf("\tNot enough data found (%d/%d)!\n", fileptr, filesize);
 
     FILE *out = fopen(fname, "wb");
     if (!out)
