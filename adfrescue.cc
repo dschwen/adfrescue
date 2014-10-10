@@ -18,11 +18,11 @@ char* getString( int pos, int len ) {
   ret[len]=0;
   return ret;
 }
-int get2( int pos ) { 
+int get2( int pos ) {
   int d = int(data[pos])*256 + int(data[pos+1]);
   return d; // negative numbers?!
 }
-int get4( int pos ) { 
+int get4( int pos ) {
   int d = ( ( int(data[pos])*256 + int(data[pos+1]) )*256 + int(data[pos+2]) ) * 256 + int(data[pos+3]);
   return d; // negative numbers?!
 }
@@ -30,7 +30,7 @@ int get4( int pos ) {
 int checksum( int block ) {
   int o = block*BSIZE;
   u_int32_t ns = 0;
-  for( int i=0; i<BSIZE; i+=4 ) 
+  for( int i=0; i<BSIZE; i+=4 )
     ns += i==20?0:get4(o+i);
   ns = -ns;
   return ns;
@@ -104,7 +104,7 @@ int main( int argc, char *argv[] ) {
         next[i/BSIZE] = get4(i+16);
       }
     } else {
-      if( i/BSIZE > 1 ) 
+      if( i/BSIZE > 1 )
         ck[i/BSIZE] = 0;
     }
   }
@@ -113,41 +113,78 @@ int main( int argc, char *argv[] ) {
   for (int j=0; j<nfile; ++j)
   {
     int i = fileheaders[j];
-
-    int nblocks = get4(i+8);
+    int broken = 0;
     int filesize = get4(i+BSIZE-188);
-    printf( "%d: '%s' (%d bytes)\n", i/BSIZE, getString(i+BSIZE-79,30), filesize);
+    char fname[1000];
+    snprintf(fname, 1000, "%d_%s", j, getString(i+BSIZE-79,30) );
+    printf( "%d: '%s' (%d bytes)\n", i/BSIZE, fname, filesize);
 
-    unsigned char *filedata = (unsigned char*)malloc(filesize);
+    // reserve space to collect file data
+    unsigned char *filedata = (unsigned char*)calloc(filesize, 1);
     int fileptr = 0;
 
-    int broken = 0;
-    for (int k=0; k<nblocks; ++k)
+    do
     {
-      // 
-      int dblock = get4(i+BSIZE-204-k*4);
-      if (ck[dblock] == 0) broken++;
-
-      // copy localsize bytes
-      int localsize = get4(dblock*BSIZE+12);
-      if (fileptr+localsize >= filesize) 
+      int nblocks = get4(i+8);
+      int nextext = get4(i+BSIZE-8);
+printf("  %d %d\n", nblocks, nextext);
+      // loop over data block table
+      for (int k=0; k<nblocks; ++k)
       {
-        printf("More data than expected!");
-        return 1;
-      }
-      memcpy(&filedata[fileptr], &data[dblock*BSIZE+24], localsize);
-      fileptr += localsize;
+        int dblock = get4(i+BSIZE-204-k*4);
+        if (ck[dblock] == 0)
+        {
+          // datablock is broken, assume data is just zeroes
+          broken++;
+          fileptr += BSIZE - 24;
+          if (fileptr > filesize) fileptr = filesize;
+        }
+        else
+        {
+          // copy localsize bytes
+          int localsize = get4(dblock*BSIZE+12);
+          if (fileptr+localsize > filesize)
+          {
+            printf("More data than expected (%d/%d)!\n", fileptr+localsize, filesize);
+            break;
+          }
+          memcpy(&filedata[fileptr], &data[dblock*BSIZE+24], localsize);
+          fileptr += localsize;
+        }
 
-      // flag this block as used
-      used[dblock] = 1;
-    }
+        // flag this block as used
+        used[dblock] = 1;
+      }
+
+      // is this linking to a file extension block with another data block list?
+      if (nextext != 0)
+      {
+        if (ck[nextext] == 0)
+        {
+          printf("Broken extension block (need to implement switch to block chain following)\n");
+          break;
+        }
+        i = nextext * BSIZE;
+      }
+      else
+        break;
+    } while(true);
+
     if (broken==0)
       printf("ALL OK!\n");
     else
-      printf("contains %d broken blocks out of %d :-(\n", broken, nblocks);
+      printf("contains %d broken blocks :-(\n", broken);
 
-    char fname[1000] = "dummy.dat";
-    FILE *out = fopen(fname, "rb");
+    if (fileptr < filesize)
+      printf("Not enough data found (%d/%d)!\n", fileptr, filesize);
+
+    FILE *out = fopen(fname, "wb");
+    if (!out)
+    {
+      printf("Could not open '%s' for writing.\n", fname);
+      return 1;
+    }
+    fwrite (filedata , sizeof(char), filesize, out);
     fclose(out);
 
     free(filedata);
@@ -163,7 +200,7 @@ int main( int argc, char *argv[] ) {
       int j = i;
       do {
         // write get4(j*BSIZE+12) bytes
-        
+
         // next block
         j = get4(j*BSIZE+16);
       } while( j != 0 );
