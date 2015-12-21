@@ -1,4 +1,4 @@
-adfrescue
+adfrescue [![Build Status](https://travis-ci.org/dschwen/adfrescue.svg?branch=master)](https://travis-ci.org/dschwen/adfrescue)
 =========
 
 Rescue files from broken ADF Amiga disk file images even if WinUAE cannot read the disks anymore.
